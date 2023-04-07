@@ -88,13 +88,13 @@ class Droid:
     # pose: SE3 matrix 4x4
     # return the global point cloud
 
-    def track(self, tstamp, image, depth=None, intrinsics=None):
+    def track(self, tstamp, image, depth, intrinsics=None):
         """ main thread - update map """
 
         with torch.no_grad():
             """ SLAM"""
             # check there is enough motion
-            self.filterx.track(tstamp, image, depth, intrinsics)
+            self.filterx.track(tstamp, image, None, intrinsics)
 
             # local bundle adjustment
             self.frontend()
@@ -104,11 +104,9 @@ class Droid:
             curr_tstamp = self.frontend.t1     
 
             # update map if the slam system's timestep actually changes 
-            # print("curr timestep: " + str(curr_timestep) + " last timestep: " + str(last_timestep)  + " param timestamp: " + str(tstamp))
             if curr_tstamp != self.last_timestamp:
+                # add new pose to mapper 
                 pose = SE3(self.video.poses[curr_tstamp]).matrix().cpu()
-                # print("timestep: " + str(curr_tstamp) + " curr pose: " + str(pose))
-
                 self.map_object.propagate(pose)
 
                 # # Add points to map

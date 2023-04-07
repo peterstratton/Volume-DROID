@@ -1,5 +1,6 @@
 import sys
 sys.path.append('droid_slam')
+sys.path.append('Data')
 sys.path.append('thirdparty/tartanair_tools')
 
 from tqdm import tqdm
@@ -12,6 +13,8 @@ import glob
 import time
 import yaml
 import argparse
+from TartanAir import TartanAirDataset
+from torch.utils.data import DataLoader
 
 from droid import Droid
 
@@ -48,8 +51,32 @@ def remap_colors(colors):
     colors = colors / 255.0
     return colors
 
+def evaluation(droid, dataloader_tartan, scenedir):
+    # loop thru data and track each image 
+    for (tstamp, image, depth, intrinsics) in tqdm(dataloader_tartan):
+        droid.track(tstamp[0], image[0], depth[0], intrinsics=intrinsics[0])
+
+    # fill in non-keyframe poses + global BA
+    traj_est = droid.terminate(image_stream(scenedir))
+
+    ### do evaluation ###
+    evaluator = TartanAirEvaluator()
+    gt_file = os.path.join(scenedir, "pose_left.txt")
+    traj_ref = np.loadtxt(gt_file, delimiter=' ')[:, [1, 2, 0, 4, 5, 3, 6]] # ned -> xyz
+
+    # usually stereo should not be scale corrected, but we are comparing monocular and stereo here
+    results = evaluator.evaluate_one_trajectory(
+        traj_ref, traj_est, scale=True, title=scenedir[-20:].replace('/', '_'))
+    
+    print(results)
+    ate_list.append(results["ate_score"])
+
+    return ate_list
 
 if __name__ == '__main__':
+    # run on the gpu
+    device = "cuda"
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--datapath", default="datasets/TartanAir")
     parser.add_argument("--weights", default="droid.pth")
@@ -100,6 +127,23 @@ if __name__ == '__main__':
         except yaml.YAMLError as exc:
             print(exc)
 
+    # CONSTANTS
+    SEED = model_params["seed"]
+    NUM_FRAMES = model_params["num_frames"]
+    MODEL_RUN_DIR = os.path.join("Models", "Runs", MODEL_NAME + "_" + dataset)
+    NUM_WORKERS = model_params["num_workers"]
+    FLOAT_TYPE = torch.float32
+    LABEL_TYPE = torch.uint8
+    MAP_METHOD = model_params["map_method"]
+    LOAD_EPOCH = model_params["load_epoch"]
+    LOAD_DIR = model_params["save_dir"]
+    VISUALIZE = model_params["visualize"]
+    MEAS_RESULT = model_params["meas_result"]
+    GEN_PREDS = model_params["gen_preds"]
+    FROM_CONT = model_params["from_continuous"]
+    TO_CONT = model_params["to_continuous"]
+    PRED_PATH = model_params["pred_path"]
+
     from data_readers.tartan import test_split
     from evaluation.tartanair_evaluator import TartanAirEvaluator
 
@@ -112,27 +156,15 @@ if __name__ == '__main__':
 
     torch.cuda.empty_cache()
     droid = Droid(args, model_params, NUM_CLASSES, ignore_labels)
-
-    scenedir = args.datapath
-    print("scene dir: " + str(scenedir))
     
-    for (tstamp, image, intrinsics) in tqdm(image_stream(scenedir, stereo=args.stereo)):
-        droid.track(tstamp, image, intrinsics=intrinsics)
+    # create TartanAir dataset 
+    test_ds = TartanAirDataset(directory=args.datapath, device=device) 
 
-    # fill in non-keyframe poses + global BA
-    traj_est = droid.terminate(image_stream(scenedir))
+    # create TartanAir dataloader
+    dataloader_tartan = DataLoader(test_ds, batch_size=1, shuffle=False, collate_fn=test_ds.collate_fn, num_workers=NUM_WORKERS, pin_memory=True)
 
-    ### do evaluation ###
-    evaluator = TartanAirEvaluator()
-    gt_file = os.path.join(scenedir, "pose_left.txt")
-    traj_ref = np.loadtxt(gt_file, delimiter=' ')[:, [1, 2, 0, 4, 5, 3, 6]] # ned -> xyz
-
-    # usually stereo should not be scale corrected, but we are comparing monocular and stereo here
-    results = evaluator.evaluate_one_trajectory(
-        traj_ref, traj_est, scale=True, title=scenedir[-20:].replace('/', '_'))
-    
-    print(results)
-    ate_list.append(results["ate_score"])
+    # perform evaluation on the data 
+    ate_list = evaluation(droid, dataloader_tartan, args.datapath)
 
     print("Results")
     print(ate_list)
