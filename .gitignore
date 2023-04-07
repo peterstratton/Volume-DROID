@@ -3,6 +3,6 @@ DROID-SLAM/datasets_withaccess
 DROID-SLAM/thirdparty/
 DROID-SLAM/demo_video
 DROID-SLAM/reconstructions/demos/
-DROID-SLAM/droid_slam/Models/
+DROID-SLAM/droid_slam/Models/Weights/
 NeuralBKI/bagfiles/
 NeuralBKI/Models
