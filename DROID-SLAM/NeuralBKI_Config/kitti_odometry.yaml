@@ -1,0 +1,39 @@
+num_classes: 11
+data_dir: "/opt/NeuralBKI/datasets/kitti_odometry"
+
+ignore_labels: [255]
+
+SPLIT_SEQUENCES: {
+    "train": ["00"], 
+    "val": ["07"], 
+    "test": ["data_kitti_15"] 
+}
+
+class_counts:
+  0: 9269313
+  1: 6191058
+  2: 8277050
+  3: 2407433
+  4: 3559253
+  5: 159545
+  6: 81323
+  7: 462289
+  8: 79479
+  9: 542488
+  10: 5588
+
+
+colors:
+  # 0:  [0, 0, 0]  # None
+  0:  [128, 0, 0]  # Building
+  1:  [128, 64, 128]  # Road
+  2:  [128, 128, 0]  # Tree
+  3:  [0, 0, 192]  # sideWalk
+  4:  [64, 0, 128]  # car
+  5:  [192, 192, 128]  # pole
+  6:  [192, 128, 128]  # traffic sign
+  7:  [128,128,128]  # sky
+  8:  [0, 128, 192]  # Bicycle
+  9:  [64, 64, 128]  # fence
+  10:  [64, 64, 0]  # person
+
