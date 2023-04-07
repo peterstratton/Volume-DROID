@@ -97,7 +97,6 @@ class KittiOdomDataset(Dataset):
         for seq in self._seqs:
             velodyne_dir = os.path.join(self._directory, seq, 'training/pointcloud')
             label_dir = os.path.join(self._directory, seq, 'training/labels')
-
             if self.from_continuous:
                 preds_dir = os.path.join(self._directory, seq, 'training/predictions_continuous')
             else: 

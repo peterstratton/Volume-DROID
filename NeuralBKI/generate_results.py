@@ -105,14 +105,20 @@ elif dataset == "kitti_odometry":
         test_ds = KittiOdomDataset(model_params["train"]["grid_params"], directory=DATA_DIR, device=device,
                                 num_frames=NUM_FRAMES, remap=False, use_aug=False, data_split=model_params["result_split"], from_continuous=FROM_CONT,
                                 to_continuous=TO_CONT)
+<<<<<<< HEAD
         
+=======
+>>>>>>> fe1559bd5eb1d0bbafbfdc6526616baeafc802e7
     else:
         test_ds = KittiOdomDataset(model_params["train"]["grid_params"], directory=DATA_DIR, device=device,
                             num_frames=NUM_FRAMES, remap=False, use_aug=False, data_split=model_params["result_split"], from_continuous=FROM_CONT,
                             to_continuous=TO_CONT)
+<<<<<<< HEAD
         
 elif dataset == "tartanair":
     test_ds = None
+=======
+>>>>>>> fe1559bd5eb1d0bbafbfdc6526616baeafc802e7
                             
 dataloader_test = DataLoader(test_ds, batch_size=1, shuffle=False, collate_fn=test_ds.collate_fn, num_workers=NUM_WORKERS, pin_memory=True)
 
@@ -131,12 +137,18 @@ map_object = GlobalMap(
 )
 
 if VISUALIZE:
+<<<<<<< HEAD
     # print("INIT Map publisher")
     rospy.init_node('talker', anonymous=True)
     map_pub = rospy.Publisher('SemMap_global', MarkerArray, queue_size=10)
     # print(map_pub)
     next_map = MarkerArray()
     # print(next_map)
+=======
+    rospy.init_node('talker', anonymous=True)
+    map_pub = rospy.Publisher('SemMap_global', MarkerArray, queue_size=10)
+    next_map = MarkerArray()
+>>>>>>> fe1559bd5eb1d0bbafbfdc6526616baeafc802e7
 
 if GEN_PREDS:
     if not os.path.exists(MODEL_NAME):

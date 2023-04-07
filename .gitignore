@@ -5,4 +5,4 @@ DROID-SLAM/demo_video
 DROID-SLAM/reconstructions/demos/
 DROID-SLAM/droid_slam/Models/Weights/
 NeuralBKI/bagfiles/
-NeuralBKI/Models
+NeuralBKI/Models/Weights/
