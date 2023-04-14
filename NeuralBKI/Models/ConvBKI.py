@@ -172,6 +172,13 @@ class ConvBKI(torch.nn.Module):
             unique_inds, counts = torch.unique(grid_pc.to(torch.long), return_counts=True, dim=0)
             counts = counts.type(torch.long)
             grid_indices = [unique_inds[:, i] for i in range(grid_pc.shape[1])]
+
+            print("grid indicies: " + str(len(grid_indices)))
+            print("update shape: " + str(update.shape))
+            print("counts: " + str(counts.shape))
+            for gi in grid_indices:
+                print("grid index: " + str(gi.shape))
+
             update[grid_indices] = update[grid_indices] + counts
         return update
 

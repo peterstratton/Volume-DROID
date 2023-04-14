@@ -1,5 +1,5 @@
 num_classes: 11
-data_dir: "/opt/NeuralBKI/datasets/kitti_odometry"
+data_dir: "/opt/Volume-DROID/NeuralBKI/datasets/kitti_odometry"
 
 ignore_labels: [255]
 

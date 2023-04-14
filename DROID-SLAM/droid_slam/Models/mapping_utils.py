@@ -62,8 +62,8 @@ class GlobalMap(ConvBKI):
         local_map, local_min_bound, local_max_bound, inside_mask = self.get_local_map()
 
         # Rotate the point cloud and translate to global frame
-        global_pose = torch.from_numpy(self.global_pose).to(self.device)
-        semantic_preds[:, :3] = torch.matmul(global_pose[:3, :3], semantic_preds[:, :3].T).T + global_pose[:3, 3]
+        # global_pose = torch.from_numpy(self.global_pose).to(self.device)
+        # semantic_preds[:, :3] = torch.matmul(global_pose[:3, :3], semantic_preds[:, :3].T).T + global_pose[:3, 3]
 
         # Change to indices using our global frame bounds
         grid_pc = self.grid_ind(semantic_preds, min_bound=local_min_bound, max_bound=local_max_bound)
@@ -124,7 +124,10 @@ class GlobalMap(ConvBKI):
         relative_translation = pose[:3, 3] - self.initial_pose[:3, 3]
         # To select voxels from memory, find the nearest voxel
         voxel_sizes = self.voxel_sizes.detach().cpu().numpy()
-        self.voxel_translation = np.round(relative_translation / voxel_sizes) * voxel_sizes
+        self.voxel_translation = (np.round(relative_translation / voxel_sizes) * voxel_sizes).numpy()
+
+        print("voxel transl: " + str(self.voxel_translation))
+
         self.nearest_voxel = self.initial_pose[:3, 3] + self.voxel_translation
 
     # Predict labels for points after propagating pose

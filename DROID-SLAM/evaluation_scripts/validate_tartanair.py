@@ -15,6 +15,10 @@ import yaml
 import argparse
 from TartanAir import TartanAirDataset
 from torch.utils.data import DataLoader
+import rospy
+from visualization_msgs.msg import Marker, MarkerArray
+from geometry_msgs.msg import Point32
+from std_msgs.msg import ColorRGBA
 
 from droid import Droid
 
@@ -51,10 +55,131 @@ def remap_colors(colors):
     colors = colors / 255.0
     return colors
 
-def evaluation(droid, dataloader_tartan, scenedir):
+def publish_voxels(map_object, min_dim, max_dim, grid_dims, colors, next_map):
+    if map_object.global_map is not None:
+        next_map.markers.clear()
+        marker = Marker()
+        marker.id = 0
+        marker.ns = "Global_Semantic_Map"
+        marker.header.frame_id = "map" # change this to match model + scene name LMSC_000001
+        marker.type = marker.CUBE_LIST
+        marker.action = marker.ADD
+        marker.lifetime.secs = 0
+        marker.header.stamp = rospy.Time.now()
+
+        marker.pose.orientation.x = 0.0
+        marker.pose.orientation.y = 0.0
+        marker.pose.orientation.z = 0.0
+        marker.pose.orientation.w = 1
+
+        marker.scale.x = (max_dim[0] - min_dim[0]) / grid_dims[0]
+        marker.scale.y = (max_dim[1] - min_dim[1]) / grid_dims[1]
+        marker.scale.z = (max_dim[2] - min_dim[2]) / grid_dims[2]
+
+        print("defined the marker!")
+        print(map_object.global_map)
+        semantic_labels = map_object.global_map[:,3:]
+        centroids = map_object.global_map[:, :3]
+
+        # Threshold here
+        total_probs = np.sum(semantic_labels, axis=-1, keepdims=False)
+        not_prior = total_probs > 1
+        semantic_labels = semantic_labels[not_prior, :]
+        centroids = centroids[not_prior, :]
+
+        semantic_labels = np.argmax(semantic_labels, axis=-1)
+        semantic_labels = semantic_labels.reshape(-1, 1)
+
+        for i in range(semantic_labels.shape[0]):
+            pred = semantic_labels[i]
+            print("pred: " + str(pred))
+            point = Point32()
+            color = ColorRGBA()
+            point.x = centroids[i, 0]
+            point.y = centroids[i, 1]
+            point.z = centroids[i, 2]
+            color.r, color.g, color.b = colors[pred].squeeze()
+
+            color.a = 1.0
+            marker.points.append(point)
+            marker.colors.append(color)
+
+        next_map.markers.append(marker)
+    return next_map
+
+def publish_local_map(labeled_grid, centroids, grid_params, colors, next_map):
+    max_dim = grid_params["max_bound"]
+    min_dim = grid_params["min_bound"]
+    grid_dims = grid_params["grid_size"]
+
+    next_map.markers.clear()
+    marker = Marker()
+    marker.id = 0
+    marker.ns = "Local Semantic Map"
+    marker.header.frame_id = "map"
+    marker.type = marker.CUBE_LIST
+    marker.action = marker.ADD
+    marker.lifetime.secs = 0
+    marker.header.stamp = rospy.Time.now()
+
+    marker.pose.orientation.x = 0.0
+    marker.pose.orientation.y = 0.0
+    marker.pose.orientation.z = 0.0
+    marker.pose.orientation.w = 1
+
+    marker.scale.x = (max_dim[0] - min_dim[0]) / grid_dims[0]
+    marker.scale.y = (max_dim[1] - min_dim[1]) / grid_dims[1]
+    marker.scale.z = (max_dim[2] - min_dim[2]) / grid_dims[2]
+
+    X, Y, Z, C = labeled_grid.shape
+    semantic_labels = labeled_grid.view(-1, C).detach().cpu().numpy()
+    centroids = centroids.detach().cpu().numpy()
+
+    semantic_sums = np.sum(semantic_labels, axis=-1, keepdims=False)
+    valid_mask = semantic_sums >= 1
+
+    semantic_labels = semantic_labels[valid_mask, :]
+    centroids = centroids[valid_mask, :]
+
+    semantic_labels = np.argmax(semantic_labels / np.sum(semantic_labels, axis=-1, keepdims=True), axis=-1)
+    semantic_labels = semantic_labels.reshape(-1, 1)
+
+    for i in range(semantic_labels.shape[0]):
+        pred = semantic_labels[i]
+        point = Point32()
+        color = ColorRGBA()
+        point.x = centroids[i, 0]
+        point.y = centroids[i, 1]
+        point.z = centroids[i, 2]
+        color.r, color.g, color.b = colors[pred].squeeze()
+
+        color.a = 1.0
+        marker.points.append(point)
+        marker.colors.append(color)
+
+    next_map.markers.append(marker)
+    return next_map
+
+def evaluation(droid, dataloader_tartan, scenedir, visualize, map_method, map_pub, next_map):
     # loop thru data and track each image 
     for (tstamp, image, depth, intrinsics) in tqdm(dataloader_tartan):
         droid.track(tstamp[0], image[0], depth[0], intrinsics=intrinsics[0])
+
+        if visualize:
+            if rospy.is_shutdown():
+                exit("Closing Python")
+            try:
+                if map_method == "global" or map_method == "local":
+                    print("Got to right before publish voxels")
+                    map = publish_voxels(droid.map_object, droid.grid_params['min_bound'], droid.grid_params['max_bound'], droid.grid_params['grid_size'], colors, next_map)
+                    print(map)
+                    map_pub.publish(map)
+                    print("Got to here after map_pub.publish")
+                elif map_method == "local":
+                    map = publish_local_map(droid.map_object.local_map, droid.map_object.centroids, droid.grid_params, colors, next_map)
+                    map_pub.publish(map)
+            except Exception as e:
+                exit("Publishing broke: " + str(e))
 
     # fill in non-keyframe poses + global BA
     traj_est = droid.terminate(image_stream(scenedir))
@@ -163,8 +288,14 @@ if __name__ == '__main__':
     # create TartanAir dataloader
     dataloader_tartan = DataLoader(test_ds, batch_size=1, shuffle=False, collate_fn=test_ds.collate_fn, num_workers=NUM_WORKERS, pin_memory=True)
 
+    map_pub = None
+    if VISUALIZE:
+        rospy.init_node('talker', anonymous=True)
+        map_pub = rospy.Publisher('SemMap_global', MarkerArray, queue_size=10)
+        next_map = MarkerArray()
+    print(map_pub)
     # perform evaluation on the data 
-    ate_list = evaluation(droid, dataloader_tartan, args.datapath)
+    ate_list = evaluation(droid, dataloader_tartan, args.datapath, VISUALIZE, MAP_METHOD, map_pub, next_map)
 
     print("Results")
     print(ate_list)

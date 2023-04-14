@@ -116,7 +116,6 @@ class GlobalMap(ConvBKI):
 
     # Propagate map given a transformation matrix
     def propagate(self, pose):
-        print("pose: " + str(pose.shape))
         self.global_pose = pose
         # Was just initialized
         if self.initial_pose is None:
