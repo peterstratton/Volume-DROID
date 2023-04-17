@@ -176,12 +176,12 @@ class ConvBKI(torch.nn.Module):
             print("grid indicies: " + str(len(grid_indices)))
             print("update shape: " + str(update.shape))
             print("counts: " + str(counts.shape))
-            grid_inds = []
-            for i in range(4):
-                grid_inds.append(grid_indices[i])
-                print("grid index: " + str(grid_indices[i].shape))
-
-            update[grid_inds] = update[grid_inds] + counts
+            # grid_inds = []
+            # for i in range(4):
+            #     grid_inds.append(grid_indices[i])
+            #     print("grid index: " + str(grid_indices[i].shape))
+            
+            update[grid_indices] = update[grid_indices] + counts
         return update
 
     def forward(self, current_map, point_cloud):

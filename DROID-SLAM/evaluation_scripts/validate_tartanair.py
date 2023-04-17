@@ -76,23 +76,34 @@ def publish_voxels(map_object, min_dim, max_dim, grid_dims, colors, next_map):
         marker.scale.y = (max_dim[1] - min_dim[1]) / grid_dims[1]
         marker.scale.z = (max_dim[2] - min_dim[2]) / grid_dims[2]
 
-        print("defined the marker!")
-        print(map_object.global_map)
+        print(map_object.global_map.shape)
         semantic_labels = map_object.global_map[:,3:]
+
+        print("semantic labels shape: " + str(semantic_labels.shape))
+
         centroids = map_object.global_map[:, :3]
 
         # Threshold here
         total_probs = np.sum(semantic_labels, axis=-1, keepdims=False)
+
+        print("total probs: " + str(total_probs.shape))
+
         not_prior = total_probs > 1
-        semantic_labels = semantic_labels[not_prior, :]
-        centroids = centroids[not_prior, :]
+
+        # print("not prior: " + str(not_prior))
+
+        # semantic_labels = semantic_labels[not_prior, :]
+        # centroids = centroids[not_prior, :]
+
+        print("not prior semantic labels: " + str(semantic_labels.shape))
 
         semantic_labels = np.argmax(semantic_labels, axis=-1)
         semantic_labels = semantic_labels.reshape(-1, 1)
 
         for i in range(semantic_labels.shape[0]):
             pred = semantic_labels[i]
-            print("pred: " + str(pred))
+            if pred != 0:
+                print("pred: " + str(pred))
             point = Point32()
             color = ColorRGBA()
             point.x = centroids[i, 0]
@@ -170,11 +181,11 @@ def evaluation(droid, dataloader_tartan, scenedir, visualize, map_method, map_pu
                 exit("Closing Python")
             try:
                 if map_method == "global" or map_method == "local":
-                    print("Got to right before publish voxels")
+                    # print("Got to right before publish voxels")
                     map = publish_voxels(droid.map_object, droid.grid_params['min_bound'], droid.grid_params['max_bound'], droid.grid_params['grid_size'], colors, next_map)
-                    print(map)
+                    # print(map)
                     map_pub.publish(map)
-                    print("Got to here after map_pub.publish")
+                    # print("Got to here after map_pub.publish")
                 elif map_method == "local":
                     map = publish_local_map(droid.map_object.local_map, droid.map_object.centroids, droid.grid_params, colors, next_map)
                     map_pub.publish(map)
@@ -293,7 +304,6 @@ if __name__ == '__main__':
         rospy.init_node('talker', anonymous=True)
         map_pub = rospy.Publisher('SemMap_global', MarkerArray, queue_size=10)
         next_map = MarkerArray()
-    print(map_pub)
     # perform evaluation on the data 
     ate_list = evaluation(droid, dataloader_tartan, args.datapath, VISUALIZE, MAP_METHOD, map_pub, next_map)
 

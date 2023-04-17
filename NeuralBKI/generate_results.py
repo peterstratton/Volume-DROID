@@ -181,6 +181,10 @@ for idx in tqdm(range(len(test_ds))):
 
         # Add points to map
         labeled_pc = np.hstack((points, pred_labels))
+
+        print(pred_labels[:10])
+        print("labeled pc shape: " + str(labeled_pc.shape))
+
         labeled_pc_torch = torch.from_numpy(labeled_pc).to(device=device, non_blocking=True)
         map_object.update_map(labeled_pc_torch)
         total_t += time.time() - start_t

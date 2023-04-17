@@ -144,7 +144,6 @@ class Droid:
 
         return pointcloud
     
-
     def generate_pointcloud(self, rgb_frame, depth_frame, se3_pose):
         """Uses purely azimuth, elevation, and depth data from camera horizontal and vertical FOV.
         Combines with odometry/pose SE3 data to give XYZRGB pointcloud in world frame. Does not convert points to camera frame
@@ -264,7 +263,6 @@ class Droid:
 
         return pointcloud
 
-
     def track(self, tstamp, image, depth, intrinsics=None):
         """ main thread - update map """
 
@@ -287,14 +285,23 @@ class Droid:
                 self.map_object.propagate(pose)
 
                 # Add points to map for the left image 
-                pcl_xyzrgb = self.generate_pointcloud(image[0], depth[0], pose)
-                labeled_pc = np.hstack((pcl_xyzrgb, np.zeros_like(pcl_xyzrgb)))
+                pcl_xyz = self.generate_pointcloud(image[0], depth[0], pose)[:,:3]
+                labels, _ = self.map_object.label_points(pcl_xyz)
+                labels = np.expand_dims(labels.cpu().numpy(), axis=1)
+
+                print("labels shape: " + str(labels.shape))
+                print(labels[:10])
+
+                labeled_pc = np.hstack((pcl_xyz, labels))
                 labeled_pc_torch = torch.from_numpy(labeled_pc).to(device="cuda", non_blocking=True)
                 self.map_object.update_map(labeled_pc_torch)
 
                 # Add points to the map for the right image 
-                pcl_xyzrgb = self.generate_pointcloud(image[1], depth[1], pose)
-                labeled_pc = np.hstack((pcl_xyzrgb, np.zeros_like(pcl_xyzrgb)))
+                pcl_xyz = self.generate_pointcloud(image[1], depth[1], pose)[:,:3]
+                labels, _ = self.map_object.label_points(pcl_xyz)
+                labels = np.expand_dims(labels.cpu().numpy(), axis=1)
+
+                labeled_pc = np.hstack((pcl_xyz, labels))
                 labeled_pc_torch = torch.from_numpy(labeled_pc).to(device="cuda", non_blocking=True)
                 self.map_object.update_map(labeled_pc_torch)
 

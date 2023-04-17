@@ -58,6 +58,9 @@ class GlobalMap(ConvBKI):
 
     # Uses saved weights instead of generating a filter
     def update_map(self, semantic_preds):
+        print("semantic preds shape: " + str(semantic_preds.shape))
+
+
         semantic_preds = semantic_preds.to(self.dtype)
         local_map, local_min_bound, local_max_bound, inside_mask = self.get_local_map()
 
@@ -83,9 +86,14 @@ class GlobalMap(ConvBKI):
         update = self.ConvLayer(update)
         new_update = torch.squeeze(update).permute(1, 2, 3, 0)
 
+        print("new update shape: " + str(new_update.shape))
+        print("new update: " + str(new_update[0, 0, 0, :]))
+
         # Find updated cells
         local_map = local_map + new_update
         updated_cells = (torch.mean(local_map, dim=3) > self.prior).view(-1)
+
+        print("updated cells shape: " + str(updated_cells.shape))
 
         updated_centroids = self.centroids[updated_cells, :] + torch.from_numpy(self.voxel_translation).to(self.device)
         local_values = local_map.view(-1, self.num_classes)[updated_cells]
