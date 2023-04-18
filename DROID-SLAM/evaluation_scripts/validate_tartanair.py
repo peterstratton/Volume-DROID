@@ -235,8 +235,8 @@ def evaluation(droid, dataloader_tartan, scenedir, visualize, map_method,
                map_pub, next_map, pose_pub, next_pose):
     
     # loop thru data and track each image 
-    for (tstamp, image, depth, intrinsics) in tqdm(dataloader_tartan):
-        b = droid.track(tstamp[0], image[0], depth[0], intrinsics=intrinsics[0])
+    for (tstamp, image, depth, seg, intrinsics) in tqdm(dataloader_tartan):
+        b = droid.track(tstamp[0], image[0], depth[0], seg[0], intrinsics=intrinsics[0])
         if b:
             break
 

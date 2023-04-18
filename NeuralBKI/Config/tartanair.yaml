@@ -1,5 +1,5 @@
 num_classes: 11
-data_dir: "/opt/NeuralBKI/datasets/the_hood"
+data_dir: "/opt/Volume-DROID/DROID-SLAM/datasets_withaccess/P002"
 
 ignore_labels: [255]
 

@@ -22,6 +22,7 @@ from Models.ConvBKI import *
 from Data.Rellis3D import Rellis3dDataset
 from Data.SemanticKitti import KittiDataset
 from Data.KittiOdometry import KittiOdomDataset
+from Data.TartanAir import TartanAirDataset
 
 MODEL_NAME = "ConvBKI_Single"
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -109,6 +110,14 @@ if dataset == "kitti_odometry":
     val_ds = KittiOdomDataset(model_params["train"]["grid_params"], directory=TRAIN_DIR, device=device,
                           num_frames=NUM_FRAMES, remap=False, use_aug=False, data_split="val", from_continuous=FROM_CONT,
                           to_continuous=TO_CONT, num_classes=model_params["num_classes"])
+if dataset == "tartanair":
+    train_ds = TartanAirDataset(model_params["train"]["grid_params"], directory=TRAIN_DIR, device=device,
+                          num_frames=NUM_FRAMES, remap=False, use_aug=False, data_split="val", from_continuous=FROM_CONT,
+                          to_continuous=TO_CONT, num_classes=model_params["num_classes"])
+    val_ds = TartanAirDataset(model_params["train"]["grid_params"], directory=TRAIN_DIR, device=device,
+                          num_frames=NUM_FRAMES, remap=False, use_aug=False, data_split="val", from_continuous=FROM_CONT,
+                          to_continuous=TO_CONT, num_classes=model_params["num_classes"])
+
 
 dataloader_train = DataLoader(train_ds, batch_size=B, shuffle=True, collate_fn=train_ds.collate_fn, num_workers=NUM_WORKERS, pin_memory=True)
 dataloader_val = DataLoader(val_ds, batch_size=B, shuffle=False, collate_fn=val_ds.collate_fn, num_workers=NUM_WORKERS, pin_memory=True)
@@ -155,6 +164,10 @@ def semantic_loop(dataloader, epoch, train_count=None, training=False):
     next_map = MarkerArray()
 
     for points, points_labels, gt_labels in tqdm(dataloader):
+    # for t_batch, imgs_batch, dps_batch, intrinsics_batch, seg_batch in tqdm(dataloader):
+        print(points.shape)
+        print()
+
         batch_gt = torch.zeros((0, 1), device=device, dtype=LABEL_TYPE)
         batch_preds = torch.zeros((0, NUM_CLASSES), device=device, dtype=FLOAT_TYPE)
 

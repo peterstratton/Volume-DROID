@@ -323,13 +323,15 @@ class Droid:
 
         return pointcloud
 
-    def track(self, tstamp, image, depth, intrinsics=None):
+    def track(self, tstamp, image, depth, seg, intrinsics=None):
         """ main thread - update map """
 
         with torch.no_grad():
             """ SLAM"""
             # check there is enough motion
             self.filterx.track(tstamp, image, None, intrinsics)
+
+            print("segmentation points: " + str(seg.shape))
 
             # local bundle adjustment
             self.frontend()
@@ -344,28 +346,28 @@ class Droid:
                 pose = SE3(self.video.poses[curr_tstamp]).matrix().cpu()
                 self.map_object.propagate(pose)
 
-                # pcl_xyz_rgb = self.generate_pinhole_pointcloud(image[0], depth[0], pose)
-                # pcl_xyz = self.generate_pointcloud(image[0], depth[0], pose)[:,:3]
-                print("PRINTING DEPTH!!!!!!!!!!!!!!!!")
-                print(depth[0])
+                # print("PRINTING DEPTH!!!!!!!!!!!!!!!!")
+                # print(depth[0])
+                # print("tf pose: " + str(self.map_object.tf_pose))
 
-                print("tf pose: " + str(self.map_object.tf_pose))
-                if self.map_object.tf_pose is not None:
-                    pcl_xyz = self.generate_pinhole_pointcloud(image[0], depth[0], pose)
-                    labels, _ = self.map_object.label_points(pcl_xyz)
-                    labels = np.expand_dims(labels.cpu().numpy(), axis=1)
+                # if self.map_object.tf_pose is not None:
+                pcl_xyz = self.generate_pinhole_pointcloud(image[0], depth[0], pose)
 
-                    img = Image.fromarray(depth[0].cpu().numpy())
-                    img = img.convert('RGB')
-                    img.save("depth_left_" + str(self.i) + ".png")
-                    self.i += 1
+                labels, _ = self.map_object.label_points(pcl_xyz)
 
-                    # # print("labels shape: " + str(labels.shape))
-                    # # print(labels[:10])
+                labels = np.expand_dims(labels.cpu().numpy(), axis=1)
 
-                    labeled_pc = np.hstack((pcl_xyz, labels))
-                    labeled_pc_torch = torch.from_numpy(labeled_pc).to(device="cuda", non_blocking=True)
-                    self.map_object.update_map(labeled_pc_torch)
+                # img = Image.fromarray(depth[0].cpu().numpy())
+                # img = img.convert('RGB')
+                # img.save("depth_left_" + str(self.i) + ".png")
+                # self.i += 1
+
+                # # print("labels shape: " + str(labels.shape))
+                # # print(labels[:10])
+
+                labeled_pc = np.hstack((pcl_xyz, labels))
+                labeled_pc_torch = torch.from_numpy(labeled_pc).to(device="cuda", non_blocking=True)
+                self.map_object.update_map(labeled_pc_torch)
 
                 # Add points to the map for the right image 
                 # pcl_xyz = self.generate_pinhole_pointcloud(image[1], depth[1], pose)

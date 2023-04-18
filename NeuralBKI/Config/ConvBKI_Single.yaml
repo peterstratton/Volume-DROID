@@ -1,5 +1,5 @@
-dataset: "semantic_kitti"
-save_dir: "ConvBKI_SIN_02_V"
+dataset: "tartanair"
+save_dir: "ConvBKI_TartanAir_02_V"
 load_epoch: 1
 map_method: "global"
 visualize: False

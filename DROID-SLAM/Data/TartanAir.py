@@ -54,6 +54,8 @@ class TartanAirDataset(Dataset):
         images_right = sorted(glob.glob(os.path.join(directory, 'image_right/*.png')))
         depth_left = sorted(glob.glob(os.path.join(directory, 'depth_left/*.npy')))
         depth_right = sorted(glob.glob(os.path.join(directory, 'depth_right/*.npy')))
+        seg_left = sorted(glob.glob(os.path.join(directory, 'seg_left/*.npy')))
+        seg_right = sorted(glob.glob(os.path.join(directory, 'seg_right/*.npy')))
 
         self.data = []
         for t in range(len(images_left)):
@@ -66,15 +68,20 @@ class TartanAirDataset(Dataset):
             depths = [np.load(depth_left[t]), np.load(depth_right[t])]
             depths = torch.from_numpy(np.stack(depths, 0))
 
+            # read corresponding segs
+            segs = [np.load(seg_left[t]), np.load(seg_right[t])]
+            segs = torch.from_numpy(np.stack(depths, 0))
+
             intrinsics = .8 * torch.as_tensor(intrinsics_vec)
-            self.data.append((t, images, depths, intrinsics))
+            self.data.append((t, images, depths, segs, intrinsics))
 
     def collate_fn(self, data):
         t_batch = [d[0] for d in data]
         imgs_batch = [d[1] for d in data]
         dps_batch = [d[2] for d in data]
-        intrinsics_batch = [d[3] for d in data]
-        return t_batch, imgs_batch, dps_batch, intrinsics_batch
+        segs_batch = [d[3] for d in data]
+        intrinsics_batch = [d[4] for d in data]
+        return t_batch, imgs_batch, dps_batch, segs_batch, intrinsics_batch
 
     def __len__(self):
         return len(self.data)
