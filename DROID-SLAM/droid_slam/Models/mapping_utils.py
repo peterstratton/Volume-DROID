@@ -25,6 +25,8 @@ class GlobalMap(ConvBKI):
 
         self.ConvLayer.eval()
         self.delete_time = delete_time
+        self.nearest_voxel = None
+        self.tf_pose = None
 
     def reset_grid(self):
         self.global_map = None
@@ -145,6 +147,10 @@ class GlobalMap(ConvBKI):
         # Was just initialized
         if self.initial_pose is None:
             self.initial_pose = pose
+
+        # print(pose[:3, 0, 0])
+        if torch.all(torch.eq(pose, self.initial_pose)) == False and self.tf_pose is None:
+            self.tf_pose = pose
 
         # Relative transformation between origin and current point
         relative_translation = pose[:3, 3] - self.initial_pose[:3, 3]

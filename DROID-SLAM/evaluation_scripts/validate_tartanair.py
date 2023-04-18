@@ -51,8 +51,10 @@ def remap_colors(colors):
     colors_temp = np.zeros((len(colors), 3))
     for i in range(len(colors)):
         colors_temp[i, :] = colors[i]
+        print(colors_temp[i, :])
     colors = colors_temp.astype("int")
     colors = colors / 255.0
+    print(colors)
     return colors
 
 def publish_voxels(map_object, min_dim, max_dim, grid_dims, colors, next_map):
@@ -109,7 +111,7 @@ def publish_voxels(map_object, min_dim, max_dim, grid_dims, colors, next_map):
             point.x = centroids[i, 0]
             point.y = centroids[i, 1]
             point.z = centroids[i, 2]
-            color.r, color.g, color.b = colors[pred].squeeze()
+            color.r, color.g, color.b = (255.0 / 255, 203.0 / 255, 5.0 / 255)
 
             color.a = 1.0
             marker.points.append(point)
@@ -137,21 +139,21 @@ def publish_pose(droid, min_dim, max_dim, grid_dims, next_pose):
     marker.scale.y = (max_dim[1] - min_dim[1]) / grid_dims[1]
     marker.scale.z = (max_dim[2] - min_dim[2]) / grid_dims[2]
 
-    # for i in range(droid.frontend.t1):
-    # pose = droid.video.poses[i]
-    pose = droid.map_object.nearest_voxel
-    point = Point32()
-    color = ColorRGBA()
-    point.x = pose[0]
-    point.y = pose[1]
-    point.z = pose[2]
-    color.r, color.g, color.b = 255, 192, 203
+    for i in range(droid.frontend.t1):
+        pose = droid.video.poses[i]
+        # pose = droid.map_object.nearest_voxel
+        point = Point32()
+        color = ColorRGBA()
+        point.x = pose[0]
+        point.y = pose[1]
+        point.z = pose[2]
+        color.r, color.g, color.b = 255, 192, 203
 
-    color.a = 1.0
-    marker.points.append(point)
-    marker.colors.append(color)
+        color.a = 1.0
+        marker.points.append(point)
+        marker.colors.append(color)
 
-    next_pose.markers.append(marker)
+        next_pose.markers.append(marker)
 
     return next_pose
 
@@ -234,7 +236,9 @@ def evaluation(droid, dataloader_tartan, scenedir, visualize, map_method,
     
     # loop thru data and track each image 
     for (tstamp, image, depth, intrinsics) in tqdm(dataloader_tartan):
-        droid.track(tstamp[0], image[0], depth[0], intrinsics=intrinsics[0])
+        b = droid.track(tstamp[0], image[0], depth[0], intrinsics=intrinsics[0])
+        if b:
+            break
 
         if visualize:
             if rospy.is_shutdown():
@@ -249,8 +253,9 @@ def evaluation(droid, dataloader_tartan, scenedir, visualize, map_method,
 
                     # for p in droid.video.poses:
                     #     print("pose: " + str(p))
-                    p = publish_pose(droid, droid.grid_params['min_bound'], droid.grid_params['max_bound'], droid.grid_params['grid_size'], next_pose)
-                    pose_pub.publish(p)
+                    if droid.map_object.nearest_voxel is not None:
+                        p = publish_pose(droid, droid.grid_params['min_bound'], droid.grid_params['max_bound'], droid.grid_params['grid_size'], next_pose)
+                        pose_pub.publish(p)
                 elif map_method == "local":
                     map = publish_local_map(droid.map_object.local_map, droid.map_object.centroids, droid.grid_params, colors, next_map)
                     map_pub.publish(map)
