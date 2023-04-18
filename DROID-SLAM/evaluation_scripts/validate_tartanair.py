@@ -79,14 +79,14 @@ def publish_voxels(map_object, min_dim, max_dim, grid_dims, colors, next_map):
         print(map_object.global_map.shape)
         semantic_labels = map_object.global_map[:,3:]
 
-        print("semantic labels shape: " + str(semantic_labels.shape))
+        # print("semantic labels shape: " + str(semantic_labels.shape))
 
         centroids = map_object.global_map[:, :3]
 
         # Threshold here
         total_probs = np.sum(semantic_labels, axis=-1, keepdims=False)
 
-        print("total probs: " + str(total_probs.shape))
+        # print("total probs: " + str(total_probs.shape))
 
         not_prior = total_probs > 1
 
@@ -95,7 +95,7 @@ def publish_voxels(map_object, min_dim, max_dim, grid_dims, colors, next_map):
         # semantic_labels = semantic_labels[not_prior, :]
         # centroids = centroids[not_prior, :]
 
-        print("not prior semantic labels: " + str(semantic_labels.shape))
+        # print("not prior semantic labels: " + str(semantic_labels.shape))
 
         semantic_labels = np.argmax(semantic_labels, axis=-1)
         semantic_labels = semantic_labels.reshape(-1, 1)
@@ -117,6 +117,43 @@ def publish_voxels(map_object, min_dim, max_dim, grid_dims, colors, next_map):
 
         next_map.markers.append(marker)
     return next_map
+
+def publish_pose(droid, min_dim, max_dim, grid_dims, next_pose):
+    # print("Publishing pose: " + str(pose))
+    # next_pose.markers.clear()
+    marker = Marker()
+    marker.header.frame_id = "map" # change this to match model + scene name LMSC_000001
+    marker.type = marker.CUBE_LIST
+    marker.action = marker.ADD
+    marker.lifetime.secs = 0
+    marker.header.stamp = rospy.Time.now()
+
+    marker.pose.orientation.x = 0.0
+    marker.pose.orientation.y = 0.0
+    marker.pose.orientation.z = 0.0
+    marker.pose.orientation.w = 1
+
+    marker.scale.x = (max_dim[0] - min_dim[0]) / grid_dims[0]
+    marker.scale.y = (max_dim[1] - min_dim[1]) / grid_dims[1]
+    marker.scale.z = (max_dim[2] - min_dim[2]) / grid_dims[2]
+
+    # for i in range(droid.frontend.t1):
+    # pose = droid.video.poses[i]
+    pose = droid.map_object.nearest_voxel
+    point = Point32()
+    color = ColorRGBA()
+    point.x = pose[0]
+    point.y = pose[1]
+    point.z = pose[2]
+    color.r, color.g, color.b = 255, 192, 203
+
+    color.a = 1.0
+    marker.points.append(point)
+    marker.colors.append(color)
+
+    next_pose.markers.append(marker)
+
+    return next_pose
 
 def publish_local_map(labeled_grid, centroids, grid_params, colors, next_map):
     max_dim = grid_params["max_bound"]
@@ -171,7 +208,30 @@ def publish_local_map(labeled_grid, centroids, grid_params, colors, next_map):
     next_map.markers.append(marker)
     return next_map
 
-def evaluation(droid, dataloader_tartan, scenedir, visualize, map_method, map_pub, next_map):
+def save_reconstruction(droid, reconstruction_path):
+
+    from pathlib import Path
+    import random
+    import string
+
+    t = droid.video.counter.value
+    tstamps = droid.video.tstamp[:t].cpu().numpy()
+    images = droid.video.images[:t].cpu().numpy()
+    disps = droid.video.disps_up[:t].cpu().numpy()
+    poses = droid.video.poses[:t].cpu().numpy()
+    intrinsics = droid.video.intrinsics[:t].cpu().numpy()
+
+    Path("reconstructions/{}".format(reconstruction_path)).mkdir(parents=True, exist_ok=True)
+    print(reconstruction_path)
+    np.save("reconstructions/{}/tstamps.npy".format(reconstruction_path), tstamps)
+    np.save("reconstructions/{}/images.npy".format(reconstruction_path), images)
+    np.save("reconstructions/{}/disps.npy".format(reconstruction_path), disps)
+    np.save("reconstructions/{}/poses.npy".format(reconstruction_path), poses)
+    np.save("reconstructions/{}/intrinsics.npy".format(reconstruction_path), intrinsics)
+
+def evaluation(droid, dataloader_tartan, scenedir, visualize, map_method, 
+               map_pub, next_map, pose_pub, next_pose):
+    
     # loop thru data and track each image 
     for (tstamp, image, depth, intrinsics) in tqdm(dataloader_tartan):
         droid.track(tstamp[0], image[0], depth[0], intrinsics=intrinsics[0])
@@ -186,6 +246,11 @@ def evaluation(droid, dataloader_tartan, scenedir, visualize, map_method, map_pu
                     # print(map)
                     map_pub.publish(map)
                     # print("Got to here after map_pub.publish")
+
+                    # for p in droid.video.poses:
+                    #     print("pose: " + str(p))
+                    p = publish_pose(droid, droid.grid_params['min_bound'], droid.grid_params['max_bound'], droid.grid_params['grid_size'], next_pose)
+                    pose_pub.publish(p)
                 elif map_method == "local":
                     map = publish_local_map(droid.map_object.local_map, droid.map_object.centroids, droid.grid_params, colors, next_map)
                     map_pub.publish(map)
@@ -236,6 +301,7 @@ if __name__ == '__main__':
     parser.add_argument("--backend_thresh", type=float, default=20.0)
     parser.add_argument("--backend_radius", type=int, default=2)
     parser.add_argument("--backend_nms", type=int, default=3)
+    parser.add_argument("--reconstruction_path", help="path to saved reconstruction")
 
     args = parser.parse_args()
     torch.multiprocessing.set_start_method('spawn')
@@ -303,9 +369,16 @@ if __name__ == '__main__':
     if VISUALIZE:
         rospy.init_node('talker', anonymous=True)
         map_pub = rospy.Publisher('SemMap_global', MarkerArray, queue_size=10)
+        pose_pub = rospy.Publisher('Pose_global', MarkerArray, queue_size=10)
         next_map = MarkerArray()
+        next_pose = MarkerArray()
+
     # perform evaluation on the data 
-    ate_list = evaluation(droid, dataloader_tartan, args.datapath, VISUALIZE, MAP_METHOD, map_pub, next_map)
+    ate_list = evaluation(droid, dataloader_tartan, args.datapath, VISUALIZE, MAP_METHOD, 
+                          map_pub, next_map, pose_pub, next_pose)
+
+    if args.reconstruction_path is not None:
+        save_reconstruction(droid, args.reconstruction_path)
 
     print("Results")
     print(ate_list)

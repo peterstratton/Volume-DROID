@@ -2,8 +2,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from PIL import Image as im
+import os
+from pathlib import Path
 
-def save_traj_video(imgs, dir='./demo_video/animation.mp4'):
+def save_traj_video(imgs, dir='./neighborhood/animation.mp4'):
+    od = "./neighborhood"
+
+    # if path is dir, and make dir if not 
+    if not os.path.isdir(od):
+        os.makedirs(od)
+
     imgs = np.transpose(imgs, (0, 2, 3, 1))    
     fig  = plt.figure()
 
@@ -19,10 +27,10 @@ def save_traj_video(imgs, dir='./demo_video/animation.mp4'):
 
 
 if __name__ == '__main__':
-    imgs = np.load('/opt/DROID-SLAM/reconstructions/demos/tartanair/images.npy')
-    poses = np.load('/opt/DROID-SLAM/reconstructions/demos/tartanair/poses.npy')
+    imgs = np.load('/opt/Volume-DROID/DROID-SLAM/reconstructions/exps/neighborhood/images.npy')
+    poses = np.load('/opt/Volume-DROID/DROID-SLAM/reconstructions/exps/neighborhood/poses.npy')
 
-    # save_traj_video(imgs)
+    save_traj_video(imgs)
 
     plt.plot(poses[:, 0], poses[:, 1])
     plt.savefig("./demo_video/pose_plot.png")

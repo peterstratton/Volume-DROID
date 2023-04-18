@@ -37,6 +37,10 @@ class ConvBKI(torch.nn.Module):
         self.compound = compound
         
         self.voxel_sizes = (self.max_bound.view(-1) - self.min_bound.view(-1)) / self.grid_size.to(self.device)
+
+        print("voxel sizes: " + str(self.voxel_sizes))
+        print("min bound: " + str(self.min_bound))
+        print("max bound: " + str(self.max_bound))
         
         self.pi = torch.acos(torch.zeros(1)).item() * 2
         self.max_dist = max_dist
@@ -137,6 +141,8 @@ class ConvBKI(torch.nn.Module):
         labels      = input_pc[:, 3:]
         
         valid_input_mask = torch.all((input_xyz < max_bound) & (input_xyz >= min_bound), axis=1)
+
+        # print("valid input mask: " + str(valid_input_mask))
         
         valid_xyz = input_xyz[valid_input_mask]
         valid_labels = labels[valid_input_mask]

@@ -42,18 +42,24 @@ class GlobalMap(ConvBKI):
         # Fetch local map from CPU (anything not seen is prior)
         local_map = self.initialize_grid()
         inside_mask = None
+
         if min_bound is None:
             min_bound = self.min_bound
         if max_bound is None:
             max_bound = self.max_bound
+
+        print("voxel translation: " + str(self.voxel_translation))
+
         local_min_bound = min_bound + torch.from_numpy(self.voxel_translation).to(self.device)
         local_max_bound = max_bound + torch.from_numpy(self.voxel_translation).to(self.device)
+
         if self.global_map is not None:
             inside_mask = self.inside_mask(local_min_bound.detach().cpu().numpy(), local_max_bound.detach().cpu().numpy())
             allocated_map = torch.tensor(self.global_map[inside_mask], device=self.device, dtype=self.dtype)
             grid_map = self.grid_ind(allocated_map, min_bound=local_min_bound, max_bound=local_max_bound)
             grid_indices = grid_map[:, :3].to(torch.long)
             local_map[grid_indices[:, 0], grid_indices[:, 1], grid_indices[:, 2], :] = allocated_map[:, 3:]
+        
         return local_map, local_min_bound, local_max_bound, inside_mask
 
     # Uses saved weights instead of generating a filter
@@ -61,11 +67,15 @@ class GlobalMap(ConvBKI):
         semantic_preds = semantic_preds.to(self.dtype)
         local_map, local_min_bound, local_max_bound, inside_mask = self.get_local_map()
 
+        print("local min bound: " + str(local_min_bound) + " local max bound: " + str(local_max_bound))
+
         # Rotate the point cloud and translate to global frame
         # global_pose = torch.from_numpy(self.global_pose).to(self.device)
         # semantic_preds[:, :3] = torch.matmul(global_pose[:3, :3], semantic_preds[:, :3].T).T + global_pose[:3, 3]
 
         # Change to indices using our global frame bounds
+        print("semantic preds: " + str(semantic_preds))
+        
         grid_pc = self.grid_ind(semantic_preds, min_bound=local_min_bound, max_bound=local_max_bound)
 
         print("grid pc shape: " + str(grid_pc.shape))
@@ -86,21 +96,21 @@ class GlobalMap(ConvBKI):
         new_update = torch.squeeze(update).permute(1, 2, 3, 0)
 
         inds = np.argmax(new_update.cpu().numpy(), axis=-1)
-        print("number of predictions that aren't 0: " + str(np.count_nonzero(inds)))
+        # print("number of predictions that aren't 0: " + str(np.count_nonzero(inds)))
 
-        print("new update shape: " + str(new_update.shape))
-        print("new update: " + str(new_update[0, 0, 0, :]))
+        # print("new update shape: " + str(new_update.shape))
+        # print("new update: " + str(new_update[0, 0, 0, :]))
 
         # Find updated cells
         local_map = local_map + new_update
         updated_cells = (torch.mean(local_map, dim=3) > self.prior).view(-1)
 
-        print("updated cells shape: " + str(updated_cells.shape))
+        # print("updated cells shape: " + str(updated_cells.shape))
 
         updated_centroids = self.centroids[updated_cells, :] + torch.from_numpy(self.voxel_translation).to(self.device)
         local_values = local_map.view(-1, self.num_classes)[updated_cells]
 
-        print(local_values[:10])
+        # print(local_values[:10])
 
         new_cells = torch.cat((updated_centroids, local_values), dim=1)
 
@@ -131,47 +141,57 @@ class GlobalMap(ConvBKI):
     # Propagate map given a transformation matrix
     def propagate(self, pose):
         self.global_pose = pose
+
         # Was just initialized
         if self.initial_pose is None:
             self.initial_pose = pose
+
         # Relative transformation between origin and current point
         relative_translation = pose[:3, 3] - self.initial_pose[:3, 3]
+
         # To select voxels from memory, find the nearest voxel
         voxel_sizes = self.voxel_sizes.detach().cpu().numpy()
+
         self.voxel_translation = (np.round(relative_translation / voxel_sizes) * voxel_sizes).numpy()
 
-        # print("voxel transl: " + str(self.voxel_translation))
-
         self.nearest_voxel = self.initial_pose[:3, 3] + self.voxel_translation
+
+        print("propogating pose: " + str(pose))
+        print("initial pose: " + str(self.initial_pose))
+        print("relative translation: " + str(relative_translation))
+        print("voxel sizes: " + str(self.voxel_sizes))
+        print("voxel transl: " + str(self.voxel_translation))
+        print("nearest voxel: " + str(self.nearest_voxel))
+
 
     # Predict labels for points after propagating pose
     def label_points(self, points):
         points = torch.from_numpy(points).to(self.device)
 
-        print("points shape: " + str(points.shape))
+        # print("points shape: " + str(points.shape))
 
         # global_pose = torch.from_numpy(self.global_pose).to(self.device)
         # points = torch.matmul(global_pose[:3, :3], points.T).T + global_pose[:3, 3]
         labels = torch.zeros((points.shape[0], self.num_classes), dtype=torch.float32, device=self.device)
 
-        print("labels shape: " + str(labels.shape))
+        # print("labels shape: " + str(labels.shape))
 
         local_map, local_min_bound, local_max_bound, __ = self.get_local_map()
 
-        print("local map shape: " + str(local_map.shape))
-        print("local min bound: " + str(local_min_bound))
-        print("local max bound: " + str(local_max_bound))
+        # print("local map shape: " + str(local_map.shape))
+        # print("local min bound: " + str(local_min_bound))
+        # print("local max bound: " + str(local_max_bound))
 
         local_mask = torch.all((points < local_max_bound) & (points >= local_min_bound), dim=1)
         local_points = points[local_mask]
 
-        print("local points shape: " + str(local_points.shape))
+        # print("local points shape: " + str(local_points.shape))
 
         grid_inds = torch.floor((local_points - local_min_bound) / self.voxel_sizes)
         maxes = (self.grid_size - 1).view(1, 3)
         clipped_inds = torch.clamp(grid_inds, torch.zeros_like(maxes), maxes).to(torch.long)
 
-        print("clipped inds shape: " + str(clipped_inds.shape))
+        # print("clipped inds shape: " + str(clipped_inds.shape))
 
         labels[local_mask, :] = local_map[clipped_inds[:, 0], clipped_inds[:, 1], clipped_inds[:, 2], :]
         labels[~local_mask, :] = self.prior

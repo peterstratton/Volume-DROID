@@ -3,6 +3,7 @@ import lietorch
 from lietorch import SE3
 import numpy as np
 import cv2
+import open3d as o3d
 
 from PIL import Image
 import torchvision.transforms as T
@@ -20,7 +21,8 @@ from torch.multiprocessing import Process
 from Models.mapping_utils import *
 from Models.model_utils import *
 from Models.ConvBKI import *
-
+from visualization import create_point_actor
+import droid_backends
 
 class Droid:
     def __init__(self, args, model_params, NUM_CLASSES, ignore_labels, device="cuda"):
@@ -42,7 +44,9 @@ class Droid:
         self.backend = DroidBackend(self.net, self.video, self.args)
 
         # visualizer
-        if not self.disable_vis:
+        # if not self.disable_vis:
+        if True:
+            print("Visualizer!")
             from visualization import droid_visualization
             self.visualizer = Process(target=droid_visualization, args=(self.video,))
             self.visualizer.start()
@@ -69,6 +73,8 @@ class Droid:
         # track the last timestamp 
         self.last_timestamp = 0
 
+        self.point_cloud_gen = o3d.geometry.PointCloud()
+
 
     def load_weights(self, weights):
         """ load trained model weights """
@@ -86,63 +92,76 @@ class Droid:
         self.net.load_state_dict(state_dict)
         self.net.to("cuda:0").eval()
 
-    def get_global_pointcloud(rgbd_frame, se3_pose):
-        # !!!USE generate_pointcloud function!!!
-        # get vector of pointcloud from robot to XYZRGB point in robot coordinate frame
-        # create an empty 2D array with 6 columns and 0 rows
-        # pcl_xyzrgb = np.empty((0, 6))  
+    def generate_pinhole_pointcloud(self, rgb_frame, depth_frame, se3_pose):
+        """Uses purely azimuth, elevation, and depth data from camera horizontal and vertical FOV.
+        Combines with odometry/pose SE3 data to give XYZRGB pointcloud in world frame. Does not convert points to camera frame
+        using camera model calculation.
 
-        # Define the intrinsic parameters of the camera
-        # Camera sensor lens aperture: 14.11 mm
-        f = 4  # focal length mm
-        cx = 320  # principal point x-coordinate
-        cy = 240  # principal point y-coordinate
-        hfov = np.radians(46.8)
-        vfov = np.radians(35.1)
+        rgbd_mat: image file, hxwx3, depth: hxwx1; hxwx4
+        se3_pose: SE3 matrix 4x4
+        return the global point cloud"""
 
-         # Get the intrinsic matrix of the camera
-        K = np.array([[f, 0, cx, 0],
-              [0, f, cy, 0],
+        transform = T.ToPILImage()
+        intrinsics_vec=[320.0, 320.0, 320.0, 240.0]
+        fx, fy, cx, cy = intrinsics_vec[0], intrinsics_vec[1], intrinsics_vec[2], intrinsics_vec[3]
+
+        Kh = np.array([[fx, 0, cx, 0],
+              [0, fy, cy, 0],
               [0, 0, 1, 0],
               [0, 0, 0, 1]])
+        Kh_inv = np.array([[1/fx, 0, -cx/fx, 0],
+                           [0, 1/fy, -cy/fy, 0],
+                           [0, 0,   1,      0],
+                           [0, 0,   0,      1]])
+        
+        S_inv = np.linalg.inv(se3_pose)
 
-        # Get the image dimensions
-        height, width, _ = rgbd_frame.shape
 
-        # Generate a grid of pixel coordinates
-        # x, y = np.meshgrid(np.arange(width), np.arange(height))
-        x, y = np.meshgrid(np.arange(height), np.arange(width))
+        # print("rgb shape before resize: " + str(rgb_frame.shape))
+        # print("depth shape before resize: " + str(depth_frame.shape))
+
+        # resize rgb to be the same shape as depth image 
+        rgb_frame = transform(rgb_frame)
+        rgb_frame = rgb_frame.resize((depth_frame.shape[1], depth_frame.shape[0]), Image.Resampling.LANCZOS)
+        rgb_frame = np.array(rgb_frame)
+
+        # print("rgb shape after resize: " + str(rgb_frame.shape))
+        # print("depth shape after resize: " + str(depth_frame.shape))
+
+        rgb = rgb_frame
+        depth = depth_frame
+
+        # Get the height and width of the image
+        height, width, _ = rgb.shape
+
+        # Create arrays of pixel coordinates
+        x, y = np.arange(width), np.arange(height)
+        
+        # Reshape the pixel coordinates and depth into vectors
         x = x.reshape(-1)
         y = y.reshape(-1)
 
-        # Extract the RGB and depth values from the RGBD frame
-        rgb = rgbd_frame[:, :, :3]
-        depth = rgbd_frame[:, :, 3]
+        depth_z = transform(depth)
+        depth_z = np.array(depth_z)
+        depth_z = depth_z.reshape(-1)
 
-        # Convert the pixel coordinates to 3D points in the camera frame
-        Xc = depth.reshape(-1) * (x - cx) / f
-        Yc = depth.reshape(-1) * (y - cy) / f
-        Zc = depth.reshape(-1)
+        x_proj, y_proj = np.meshgrid(x, y)
+        x_proj = x_proj.reshape(-1)
+        y_proj = y_proj.reshape(-1)
 
-        # Convert the 3D points to the world frame using the SE3 pose
-        Xw = se3_pose[0, 0] * Xc + se3_pose[0, 1] * Yc + se3_pose[0, 2] * Zc + se3_pose[0, 3]
-        Yw = se3_pose[1, 0] * Xc + se3_pose[1, 1] * Yc + se3_pose[1, 2] * Zc + se3_pose[1, 3]
-        Zw = se3_pose[2, 0] * Xc + se3_pose[2, 1] * Yc + se3_pose[2, 2] * Zc + se3_pose[2, 3]
+        onesarr = np.ones(x_proj.shape)
+        print("x_proj shape: " + str(x_proj.shape))
+        print("y_proj shape: " + str(y_proj.shape))
+        print("depth_z shape: " + str(depth_z.shape))
+        print("onesarr shape: " + str(onesarr.shape))
 
-        # Apply a horizontal and vertical FOV mask to remove points outside the field of view
-        hmask = np.logical_and(np.arctan2(Xw, Zw) > -hfov/2, np.arctan2(Xw, Zw) < hfov/2)
-        vmask = np.logical_and(np.arctan2(Yw, Zw) > -vfov/2, np.arctan2(Yw, Zw) < vfov/2)
-        mask = np.logical_and(hmask, vmask)
+        # pvec = np.vstack((x, y, np.ones(x_proj.shape).transpose(), 1/depth_z)).transpose()
+        np.seterr(divide='ignore', invalid='ignore')
+        pvec = np.vstack((x_proj, y_proj, onesarr, 1/depth_z))
 
-        # Create the point cloud
-        pointcloud = np.zeros((height*width, 6), dtype=np.float32)
-        pointcloud[:, :3] = np.stack([Xw, Yw, Zw], axis=1)
-        pointcloud[:, 3:] = rgb.reshape(-1, 3)
-
-        # Apply the FOV mask to remove points outside the field of view
-        pointcloud = pointcloud[mask]
-
-        return pointcloud
+        print("pvec shape: " + str(pvec.shape))
+        print("pvec: " + str(pvec[:][5]))
+        
     
     def generate_pointcloud(self, rgb_frame, depth_frame, se3_pose):
         """Uses purely azimuth, elevation, and depth data from camera horizontal and vertical FOV.
@@ -165,7 +184,14 @@ class Droid:
         # depth = rgbd_frame[:, :, 3] 
 
         transform = T.ToPILImage()
+        intrinsics_vec=[320.0, 320.0, 320.0, 240.0]
+        fx, fy, cx, cy = intrinsics_vec[0], intrinsics_vec[1], intrinsics_vec[2], intrinsics_vec[3]
 
+        K = np.array([[fx, 0, cx, 0],
+              [0, fy, cy, 0],
+              [0, 0, 1, 0],
+              [0, 0, 0, 1]])
+        
         print("rgb shape before resize: " + str(rgb_frame.shape))
         print("depth shape before resize: " + str(depth_frame.shape))
 
@@ -262,6 +288,34 @@ class Droid:
         pointcloud = np.vstack((X_world, Y_world, Z_world, R, G, B)).transpose()
 
         return pointcloud
+    
+    def create_o3d_pc(self, rgb_frame, depth_frame):
+        transform = T.ToPILImage()
+        intrinsics_vec=[320.0, 320.0, 320.0, 240.0]
+        fx, fy, cx, cy = intrinsics_vec[0], intrinsics_vec[1], intrinsics_vec[2], intrinsics_vec[3]
+
+        K = np.array([[fx, 0, cx, 0],
+              [0, fy, cy, 0],
+              [0, 0, 1, 0],
+              [0, 0, 0, 1]])
+        
+        print("rgb shape before resize: " + str(rgb_frame.shape))
+        print("depth shape before resize: " + str(depth_frame.shape))
+
+        # resize rgb to be the same shape as depth image 
+        rgb_frame = transform(rgb_frame)
+        rgb_frame = rgb_frame.resize((depth_frame.shape[1], depth_frame.shape[0]), Image.Resampling.LANCZOS)
+        rgb_frame = np.array(rgb_frame)
+
+        print("rgb shape after resize: " + str(rgb_frame.shape))
+        print("depth shape after resize: " + str(depth_frame.shape))
+
+        rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(rgb_frame, depth_frame)
+
+        return o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_image,
+                            o3d.camera.PinholeCameraIntrinsic(
+                            o3d.camera.PinholeCameraIntrinsicParameters.PrimeSenseDefault)
+                            )
 
     def track(self, tstamp, image, depth, intrinsics=None):
         """ main thread - update map """
@@ -279,34 +333,91 @@ class Droid:
             curr_tstamp = self.frontend.t1     
 
             # update map if the slam system's timestep actually changes 
-            if curr_tstamp != self.last_timestamp:
+            # if curr_tstamp != self.last_timestamp:
                 # add new pose to mapper 
-                pose = SE3(self.video.poses[curr_tstamp]).matrix().cpu()
-                self.map_object.propagate(pose)
+            pose = SE3(self.video.poses[curr_tstamp]).matrix().cpu()
+            self.map_object.propagate(pose)
 
-                # Add points to map for the left image 
-                pcl_xyz = self.generate_pointcloud(image[0], depth[0], pose)[:,:3]
+            with self.video.get_lock():
+                t = self.video.counter.value 
+                dirty_index, = torch.where(self.video.dirty.clone())
+                dirty_index = dirty_index
+
+            if len(dirty_index) == 0:
+                return
+
+            self.video.dirty[dirty_index] = False
+
+            # Add points to map for the left image 
+            poses = torch.index_select(self.video.poses, 0, dirty_index)
+            disps = torch.index_select(self.video.disps, 0, dirty_index)
+            Ps = SE3(poses).inv().matrix().cpu().numpy()
+
+            images = torch.index_select(self.video.images, 0, dirty_index)
+            images = images.cpu()[:,[2,1,0],3::8,3::8].permute(0,2,3,1) / 255.0
+
+            points = droid_backends.iproj(SE3(poses).inv().data, disps, self.video.intrinsics[0]).cpu()
+
+            thresh = 0.005 * torch.ones_like(disps.mean(dim=[1,2]))
+                        
+            count = droid_backends.depth_filter(
+                self.video.poses, self.video.disps, self.video.intrinsics[0], dirty_index, thresh)
+
+            count = count.cpu()
+            disps = disps.cpu()
+            masks = ((count >= 2) & (disps > .5*disps.mean(dim=[1,2], keepdim=True)))
+            
+            for i in range(len(dirty_index)):
+                pose = Ps[i]
+                ix = dirty_index[i].item()
+
+                mask = masks[i].reshape(-1)
+                pts = points[i].reshape(-1, 3)[mask].cpu().numpy()
+                clr = images[i].reshape(-1, 3)[mask].cpu().numpy()
+                
+                ## add point actor ###
+                point_actor = create_point_actor(pts, clr)
+                pcl_xyz = np.asarray(point_actor.points)
+                # print("point cloud shape: " + str(pcl_xyz))
+
                 labels, _ = self.map_object.label_points(pcl_xyz)
                 labels = np.expand_dims(labels.cpu().numpy(), axis=1)
-
-                print("labels shape: " + str(labels.shape))
-                print(labels[:10])
+                # print(labels)
 
                 labeled_pc = np.hstack((pcl_xyz, labels))
                 labeled_pc_torch = torch.from_numpy(labeled_pc).to(device="cuda", non_blocking=True)
                 self.map_object.update_map(labeled_pc_torch)
 
-                # Add points to the map for the right image 
-                pcl_xyz = self.generate_pointcloud(image[1], depth[1], pose)[:,:3]
-                labels, _ = self.map_object.label_points(pcl_xyz)
-                labels = np.expand_dims(labels.cpu().numpy(), axis=1)
+                # pcl_xyz_rgb = self.generate_pointcloud(image[0], depth[0], pose)
+                # pcl_xyz = self.generate_pointcloud(image[0], depth[0], pose)[:,:3]
+                # pcl_xyz = self.create_o3d_pc(image[0], depth[0])
 
-                labeled_pc = np.hstack((pcl_xyz, labels))
-                labeled_pc_torch = torch.from_numpy(labeled_pc).to(device="cuda", non_blocking=True)
-                self.map_object.update_map(labeled_pc_torch)
+                # labels, _ = self.map_object.label_points(pcl_xyz)
+                # labels = np.expand_dims(labels.cpu().numpy(), axis=1)
 
-                # new last timestep
-                self.last_timestamp = curr_tstamp
+                # # print("labels shape: " + str(labels.shape))
+                # # print(labels[:10])
+
+                # labeled_pc = np.hstack((pcl_xyz, labels))
+                # labeled_pc_torch = torch.from_numpy(labeled_pc).to(device="cuda", non_blocking=True)
+                # self.map_object.update_map(labeled_pc_torch)
+
+                # # Add points to the map for the right image 
+                # pcl_xyz_rgb = self.generate_pointcloud(image[1], depth[1], pose)
+                # # pcl_xyz = self.generate_pointcloud(image[1], depth[1], pose)[:,:3]
+                # pcl_xyz = pcl_xyz_rgb[:,:3]
+                # # self.generate_pinhole_pointcloud(image[1], depth[1], pose)
+                # create_point_actor(pcl_xyz, pcl_xyz_rgb[:,3:])
+
+                # labels, _ = self.map_object.label_points(pcl_xyz)
+                # labels = np.expand_dims(labels.cpu().numpy(), axis=1)
+
+                # labeled_pc = np.hstack((pcl_xyz, labels))
+                # labeled_pc_torch = torch.from_numpy(labeled_pc).to(device="cuda", non_blocking=True)
+                # self.map_object.update_map(labeled_pc_torch)
+
+            # new last timestep
+            self.last_timestamp = curr_tstamp
             """#####################################################################"""
 
 
