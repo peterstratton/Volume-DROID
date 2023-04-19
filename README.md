@@ -24,10 +24,21 @@ DROID-SLAM code adapted from: https://github.com/princeton-vl/DROID-SLAM
 
 ## Installation
 
+### Mandatory Installation
+
 To install Volume-DROID, first clone the repo:
 ```
 git clone https://github.com/peterstratton/Volume-DROID.git
 ```
+
+Next, we need to install the eigen and and lietorch repositories. To do so, run the following commands from inside the Volume-DROID directory:
+```
+cd DROID-SLAM/thirdparty/
+git clone https://gitlab.com/libeigen/eigen.git
+git clone https://github.com/princeton-vl/lietorch.git
+```
+
+### Optional Docker Setup
 For our experiments, all of our code was run inside Docker containers. To install Docker on an Ubuntu machine, follow the instructions in this link: https://docs.docker.com/engine/install/ubuntu/#set-up-the-repository.
 
 After Docker is installed, we need to build a Docker image with both pytorch and ros installed. We adapted a dockerfile given to us by a classmate for this purpose. To build the image, run the following command:
