@@ -68,17 +68,17 @@ def publish_voxels(map_object, min_dim, max_dim, grid_dims, colors, next_map):
     marker.scale.y = (max_dim[1] - min_dim[1]) / grid_dims[1]
     marker.scale.z = (max_dim[2] - min_dim[2]) / grid_dims[2]
 
-    print(map_object.global_map.shape)
+    # print(map_object.global_map.shape)
     semantic_labels = map_object.global_map[:,3:]
 
-    print("semantic labels shape: " + str(semantic_labels.shape))
+    # print("semantic labels shape: " + str(semantic_labels.shape))
 
     centroids = map_object.global_map[:, :3]
 
     # Threshold here
     total_probs = np.sum(semantic_labels, axis=-1, keepdims=False)
 
-    print("total probs: " + str(total_probs))
+    # print("total probs: " + str(total_probs))
 
     not_prior = total_probs > 1
     semantic_labels = semantic_labels[not_prior, :]

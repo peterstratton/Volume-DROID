@@ -48,6 +48,9 @@ class TartanAirDataset(Dataset):
                 intrinsics_vec=[320.0, 320.0, 320.0, 240.0],
                  ):
         
+        classes_from = [217, 152, 151, 205, 237, 224, 251, 227, 168, 196, 146]
+        classes_to = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        
         # read all png images in folder
         ht0, wd0 = [480, 640]
         images_left = sorted(glob.glob(os.path.join(directory, 'image_left/*.png')))
@@ -69,8 +72,16 @@ class TartanAirDataset(Dataset):
             depths = torch.from_numpy(np.stack(depths, 0))
 
             # read corresponding segs
-            segs = [np.load(seg_left[t]), np.load(seg_right[t])]
-            segs = torch.from_numpy(np.stack(depths, 0))
+            seg_l = np.load(seg_left[t])
+            seg_r = np.load(seg_right[t])
+            for cl_f, cl_t in zip(classes_from, classes_to):
+                seg_l = np.where(seg_l == cl_f, cl_t, seg_l)
+                seg_r = np.where(seg_r == cl_f, cl_t, seg_r)
+            seg_l = np.where(seg_l > 10, 0, seg_l)
+            seg_r = np.where(seg_r > 10, 0, seg_r)
+            segs = [seg_l, seg_r]
+
+            segs = torch.from_numpy(np.stack(segs, 0))
 
             intrinsics = .8 * torch.as_tensor(intrinsics_vec)
             self.data.append((t, images, depths, segs, intrinsics))

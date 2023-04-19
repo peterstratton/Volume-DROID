@@ -20,6 +20,8 @@ from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point32
 from std_msgs.msg import ColorRGBA
 
+# from torchvision.models.segmentation import fcn_resnet50, FCN_ResNet50_Weights
+
 from droid import Droid
 
 def image_stream(datapath, image_size=[384, 512], intrinsics_vec=[320.0, 320.0, 320.0, 240.0], stereo=False):
@@ -78,7 +80,7 @@ def publish_voxels(map_object, min_dim, max_dim, grid_dims, colors, next_map):
         marker.scale.y = (max_dim[1] - min_dim[1]) / grid_dims[1]
         marker.scale.z = (max_dim[2] - min_dim[2]) / grid_dims[2]
 
-        print(map_object.global_map.shape)
+        # print(map_object.global_map.shape)
         semantic_labels = map_object.global_map[:,3:]
 
         # print("semantic labels shape: " + str(semantic_labels.shape))
@@ -104,14 +106,15 @@ def publish_voxels(map_object, min_dim, max_dim, grid_dims, colors, next_map):
 
         for i in range(semantic_labels.shape[0]):
             pred = semantic_labels[i]
-            if pred != 0:
-                print("pred: " + str(pred))
+            # if pred != 0:
+            #     print("pred: " + str(pred))
             point = Point32()
             color = ColorRGBA()
             point.x = centroids[i, 0]
             point.y = centroids[i, 1]
             point.z = centroids[i, 2]
-            color.r, color.g, color.b = (255.0 / 255, 203.0 / 255, 5.0 / 255)
+            # color.r, color.g, color.b = (255.0 / 255, 203.0 / 255, 5.0 / 255)
+            color.r, color.g, color.b = colors[pred].squeeze()
 
             color.a = 1.0
             marker.points.append(point)
@@ -240,6 +243,7 @@ def evaluation(droid, dataloader_tartan, scenedir, visualize, map_method,
         if b:
             break
 
+        # if visualize:
         if visualize:
             if rospy.is_shutdown():
                 exit("Closing Python")
@@ -261,6 +265,8 @@ def evaluation(droid, dataloader_tartan, scenedir, visualize, map_method,
                     map_pub.publish(map)
             except Exception as e:
                 exit("Publishing broke: " + str(e))
+
+    print("class dist: " + str(droid.class_dist))
 
     # fill in non-keyframe poses + global BA
     traj_est = droid.terminate(image_stream(scenedir))
@@ -362,13 +368,24 @@ if __name__ == '__main__':
     print("Performing evaluation on {}".format(args.datapath))
 
     torch.cuda.empty_cache()
-    droid = Droid(args, model_params, NUM_CLASSES, ignore_labels)
+
+    # Step 1: Initialize model with the best available weights
+    # weights = FCN_ResNet50_Weights.DEFAULT
+    # model = fcn_resnet50(weights=weights)
+    # model.eval()
+
+    # # Step 2: Initialize the inference transforms
+    # preprocess = weights.transforms()
+
+    # instanciate the droid 
+    droid = Droid(args, model_params, NUM_CLASSES, ignore_labels, None, None, None, device="cuda")
     
     # create TartanAir dataset 
     test_ds = TartanAirDataset(directory=args.datapath, device=device) 
 
     # create TartanAir dataloader
-    dataloader_tartan = DataLoader(test_ds, batch_size=1, shuffle=False, collate_fn=test_ds.collate_fn, num_workers=NUM_WORKERS, pin_memory=True)
+    dataloader_tartan = DataLoader(test_ds, batch_size=1, shuffle=False, collate_fn=test_ds.collate_fn, 
+                                   num_workers=NUM_WORKERS, pin_memory=True)
 
     map_pub = None
     if VISUALIZE:
@@ -377,7 +394,7 @@ if __name__ == '__main__':
         pose_pub = rospy.Publisher('Pose_global', MarkerArray, queue_size=10)
         next_map = MarkerArray()
         next_pose = MarkerArray()
-
+ 
     # perform evaluation on the data 
     ate_list = evaluation(droid, dataloader_tartan, args.datapath, VISUALIZE, MAP_METHOD, 
                           map_pub, next_map, pose_pub, next_pose)

@@ -82,6 +82,9 @@ class GlobalMap(ConvBKI):
 
         print("grid pc shape: " + str(grid_pc.shape))
 
+        # for i in range(10):
+        #     print("grid pc: " + str(grid_pc[i]))
+
         # Update local map
         update = torch.zeros_like(local_map, requires_grad=False)
 
