@@ -20,8 +20,6 @@ from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point32
 from std_msgs.msg import ColorRGBA
 
-# from torchvision.models.segmentation import fcn_resnet50, FCN_ResNet50_Weights
-
 from droid import Droid
 
 def image_stream(datapath, image_size=[384, 512], intrinsics_vec=[320.0, 320.0, 320.0, 240.0], stereo=False):
@@ -53,10 +51,8 @@ def remap_colors(colors):
     colors_temp = np.zeros((len(colors), 3))
     for i in range(len(colors)):
         colors_temp[i, :] = colors[i]
-        print(colors_temp[i, :])
     colors = colors_temp.astype("int")
     colors = colors / 255.0
-    print(colors)
     return colors
 
 def publish_voxels(map_object, min_dim, max_dim, grid_dims, colors, next_map):
@@ -80,40 +76,23 @@ def publish_voxels(map_object, min_dim, max_dim, grid_dims, colors, next_map):
         marker.scale.y = (max_dim[1] - min_dim[1]) / grid_dims[1]
         marker.scale.z = (max_dim[2] - min_dim[2]) / grid_dims[2]
 
-        # print(map_object.global_map.shape)
         semantic_labels = map_object.global_map[:,3:]
-
-        # print("semantic labels shape: " + str(semantic_labels.shape))
-
         centroids = map_object.global_map[:, :3]
 
         # Threshold here
         total_probs = np.sum(semantic_labels, axis=-1, keepdims=False)
-
-        # print("total probs: " + str(total_probs.shape))
-
         not_prior = total_probs > 1
-
-        # print("not prior: " + str(not_prior))
-
-        # semantic_labels = semantic_labels[not_prior, :]
-        # centroids = centroids[not_prior, :]
-
-        # print("not prior semantic labels: " + str(semantic_labels.shape))
 
         semantic_labels = np.argmax(semantic_labels, axis=-1)
         semantic_labels = semantic_labels.reshape(-1, 1)
 
         for i in range(semantic_labels.shape[0]):
             pred = semantic_labels[i]
-            # if pred != 0:
-            #     print("pred: " + str(pred))
             point = Point32()
             color = ColorRGBA()
             point.x = centroids[i, 0]
             point.y = centroids[i, 1]
             point.z = centroids[i, 2]
-            # color.r, color.g, color.b = (255.0 / 255, 203.0 / 255, 5.0 / 255)
             color.r, color.g, color.b = colors[pred].squeeze()
 
             color.a = 1.0
@@ -124,8 +103,7 @@ def publish_voxels(map_object, min_dim, max_dim, grid_dims, colors, next_map):
     return next_map
 
 def publish_pose(droid, min_dim, max_dim, grid_dims, next_pose):
-    # print("Publishing pose: " + str(pose))
-    # next_pose.markers.clear()
+    next_pose.markers.clear()
     marker = Marker()
     marker.header.frame_id = "map" # change this to match model + scene name LMSC_000001
     marker.type = marker.CUBE_LIST
@@ -144,7 +122,6 @@ def publish_pose(droid, min_dim, max_dim, grid_dims, next_pose):
 
     for i in range(droid.frontend.t1):
         pose = droid.video.poses[i]
-        # pose = droid.map_object.nearest_voxel
         point = Point32()
         color = ColorRGBA()
         point.x = pose[0]
@@ -239,9 +216,8 @@ def evaluation(droid, dataloader_tartan, scenedir, visualize, map_method,
     
     # loop thru data and track each image 
     for (tstamp, image, depth, seg, intrinsics) in tqdm(dataloader_tartan):
-        b = droid.track(tstamp[0], image[0], depth[0], seg[0], intrinsics=intrinsics[0])
-        if b:
-            break
+        # pass RGBD image to DROID-SLAM
+        droid.track(tstamp[0], image[0], depth[0], seg[0], intrinsics=intrinsics[0])
 
         # if visualize:
         if visualize:
@@ -249,14 +225,9 @@ def evaluation(droid, dataloader_tartan, scenedir, visualize, map_method,
                 exit("Closing Python")
             try:
                 if map_method == "global" or map_method == "local":
-                    # print("Got to right before publish voxels")
                     map = publish_voxels(droid.map_object, droid.grid_params['min_bound'], droid.grid_params['max_bound'], droid.grid_params['grid_size'], colors, next_map)
-                    # print(map)
                     map_pub.publish(map)
-                    # print("Got to here after map_pub.publish")
 
-                    # for p in droid.video.poses:
-                    #     print("pose: " + str(p))
                     if droid.map_object.nearest_voxel is not None:
                         p = publish_pose(droid, droid.grid_params['min_bound'], droid.grid_params['max_bound'], droid.grid_params['grid_size'], next_pose)
                         pose_pub.publish(p)
@@ -265,8 +236,6 @@ def evaluation(droid, dataloader_tartan, scenedir, visualize, map_method,
                     map_pub.publish(map)
             except Exception as e:
                 exit("Publishing broke: " + str(e))
-
-    print("class dist: " + str(droid.class_dist))
 
     # fill in non-keyframe poses + global BA
     traj_est = droid.terminate(image_stream(scenedir))
@@ -368,14 +337,6 @@ if __name__ == '__main__':
     print("Performing evaluation on {}".format(args.datapath))
 
     torch.cuda.empty_cache()
-
-    # Step 1: Initialize model with the best available weights
-    # weights = FCN_ResNet50_Weights.DEFAULT
-    # model = fcn_resnet50(weights=weights)
-    # model.eval()
-
-    # # Step 2: Initialize the inference transforms
-    # preprocess = weights.transforms()
 
     # instanciate the droid 
     droid = Droid(args, model_params, NUM_CLASSES, ignore_labels, None, None, None, device="cuda")

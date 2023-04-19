@@ -24,8 +24,6 @@ from Models.ConvBKI import *
 from visualization import create_point_actor
 import droid_backends
 
-# from torchvision.transforms.functional import to_pil_image
-
 class Droid:
     def __init__(self, args, model_params, NUM_CLASSES, ignore_labels, model, preprocess, weights, device="cuda"):
         super(Droid, self).__init__()
@@ -55,8 +53,6 @@ class Droid:
 
         # visualizer
         if not self.disable_vis:
-        # if True:
-            print("Visualizer!")
             from visualization import droid_visualization
             self.visualizer = Process(target=droid_visualization, args=(self.video,))
             self.visualizer.start()
@@ -100,39 +96,26 @@ class Droid:
         self.net.to("cuda:0").eval()
 
     def generate_pinhole_pointcloud(self, rgb_frame, depth_frame, se3_pose):
-        """Uses purely azimuth, elevation, and depth data from camera horizontal and vertical FOV.
-        Combines with odometry/pose SE3 data to give XYZRGB pointcloud in world frame. Does not convert points to camera frame
-        using camera model calculation.
-
+        """
         rgbd_mat: image file, hxwx3, depth: hxwx1; hxwx4
         se3_pose: SE3 matrix 4x4
-        return the global point cloud"""
+        return the global point cloud
+        """
 
         transform = T.ToPILImage()
         intrinsics_vec=[320.0, 320.0, 320.0, 240.0]
         fx, fy, cx, cy = intrinsics_vec[0], intrinsics_vec[1], intrinsics_vec[2], intrinsics_vec[3]
 
-        Kh = np.array([[fx, 0, cx, 0],
-              [0, fy, cy, 0],
-              [0, 0, 1, 0],
-              [0, 0, 0, 1]])
         Kh_inv = np.array([[1/fx, 0, -cx/fx, 0],
                            [0, 1/fy, -cy/fy, 0],
                            [0, 0,   1,      0],
                            [0, 0,   0,      1]])
         S_inv = np.linalg.inv(se3_pose)
 
-
-        # print("rgb shape before resize: " + str(rgb_frame.shape))
-        # print("depth shape before resize: " + str(depth_frame.shape))
-
         # resize rgb to be the same shape as depth image 
         rgb_frame = transform(rgb_frame)
         rgb_frame = rgb_frame.resize((depth_frame.shape[1], depth_frame.shape[0]), Image.Resampling.LANCZOS)
         rgb_frame = np.array(rgb_frame)
-
-        # print("rgb shape after resize: " + str(rgb_frame.shape))
-        # print("depth shape after resize: " + str(depth_frame.shape))
 
         # Get the height and width of the image
         height, width, _ = rgb_frame.shape
@@ -153,50 +136,21 @@ class Droid:
 
         onesarr = np.ones(x_proj.shape)
 
-        # print("x_proj shape: " + str(x_proj.shape))
-        # print("y_proj shape: " + str(y_proj.shape))
-        # print("depth_z shape: " + str(depth_z.shape))
-        # print("onesarr shape: " + str(onesarr.shape))
-
         # pvec = np.vstack((x, y, np.ones(x_proj.shape).transpose(), 1/depth_z)).transpose()
         np.seterr(divide='ignore', invalid='ignore')
         pvec = np.vstack((x_proj, y_proj, onesarr, 1/depth_z))
 
-        print("pvec shape: " + str(pvec.shape))
-        print("pvec: " + str(pvec[:, :5]))
 
-        # Rotmat = np.array([[1,0,0,0],
-        #                    [0, np.cos(-np.pi/4), -np.sin(-np.pi/4), 0], 
-        #                    [0, np.sin(-np.pi/4), np.cos(-np.pi/4), 0], 
-        #                    [0,0,0,1]])
-        
+        # hack to get a semi-decent rviz visualization
         Rotmat = np.array([[1,0,0,0],
                            [0, np.cos(np.pi/4), -np.sin(np.pi/4), 0], 
                            [0, np.sin(np.pi/4), np.cos(np.pi/4), 0], 
                            [0,0,0,1]])
 
-        # Rotmat = np.array([[1,0,0,0],
-        #                    [0, np.cos(-np.pi/2), -np.sin(-np.pi/2), 0], 
-        #                    [0, np.sin(-np.pi/2), np.cos(-np.pi/2), 0], 
-        #                    [0,0,0,1]])
-
-        # W = np.linalg.inv(self.map_object.tf_pose)
-        # print(Rotmat)
-        # pcl = ((W @ S_inv @ Kh_inv @ pvec) *-depth_z).T[:, :3]
-        # pcl = ((S_inv @ Kh_inv @ pvec) *-depth_z).T[:, :3]
         pcl = ((S_inv @ Kh_inv @ pvec) *-depth_z)
         pcl = (Rotmat @ pcl).T[:, :3]
-        # pcl = ((S_inv @ np.linalg.inv(Rotmat) @ Kh_inv @ pvec) *-depth_z).T[:, :3]
-
-        # for i in range(10):
-        #     print("point cloud point " + str(i) + ":" + str(pcl[i]))
-
-        # pcl[:,0] = -1*pcl[:,0]
         pcl[:,1] = -1*pcl[:,1]
 
-        # temp = pcl[:,0]
-        # return ((Kh_inv @ pvec) * depth_z).T[:, :3]
-        # return ((S_inv @ Kh_inv @ pvec) *-depth_z).T[:, :3]
         return pcl
 
     def track(self, tstamp, image, depth, seg, intrinsics=None):
@@ -206,8 +160,6 @@ class Droid:
             """ SLAM"""
             # check there is enough motion
             self.filterx.track(tstamp, image, None, intrinsics)
-
-            # print("segmentation points: " + str(seg.shape))
 
             # local bundle adjustment
             self.frontend()
@@ -222,56 +174,23 @@ class Droid:
                 pose = SE3(self.video.poses[curr_tstamp]).matrix().cpu()
                 self.map_object.propagate(pose)
 
-                # print("PRINTING DEPTH!!!!!!!!!!!!!!!!")
-                # print(depth[0])
-                # print("tf pose: " + str(self.map_object.tf_pose))
-
-                # Step 3: Apply inference preprocessing transforms
-                # batch = self.preprocess(image)
-
-                # # Step 4: Use the model and visualize the prediction
-                # prediction = self.model(batch)["out"]
-                # normalized_masks = prediction.softmax(dim=1)
-                # class_to_idx = {cls: idx for (idx, cls) in enumerate(self.weights.meta["categories"])}
-                # mask = normalized_masks[0, class_to_idx["dog"]]
-                # to_pil_image(mask).show()
-
-                # if self.map_object.tf_pose is not None:
+                # generate 3D pointcloud
                 pcl_xyz = self.generate_pinhole_pointcloud(image[0], depth[0], pose)
-                # labels, _ = self.map_object.label_points(pcl_xyz)
 
+                # pass in gt labels (with errors due to neighborhood to KITTI class mapping)
+                # ideally, this should be the output from a semantic segmentation network
                 labels = seg[0]
                 labels = labels.reshape(-1)
                 labels = np.expand_dims(labels.cpu().numpy(), axis=1)
-                # print(labels.shape)
 
-                # img = Image.fromarray(depth[0].cpu().numpy())
-                # img = img.convert('RGB')
-                # img.save("depth_left_" + str(self.i) + ".png")
-                # self.i += 1
-
+                # update the mapper
                 labeled_pc = np.hstack((pcl_xyz, labels))
                 labeled_pc_torch = torch.from_numpy(labeled_pc).to(device="cuda", non_blocking=True)
                 self.map_object.update_map(labeled_pc_torch)
 
-                # Add points to the map for the right image 
-                # labels, _ = self.map_object.label_points(pcl_xyz)
-                # labels = np.expand_dims(labels.cpu().numpy(), axis=1)
-
-                # img = Image.fromarray(depth[1].cpu().numpy())
-                # img = img.convert('RGB')
-                # img.save("depth_right_" + str(self.i) + ".png")
-
-                # labeled_pc = np.hstack((pcl_xyz, labels))
-                # labeled_pc_torch = torch.from_numpy(labeled_pc).to(device="cuda", non_blocking=True)
-                # self.map_object.update_map(labeled_pc_torch)
-
             # new last timestep
             self.last_timestamp = curr_tstamp
             """#####################################################################"""
-        # if self.i >= 12:
-        #     return True 
-        return False
 
     def terminate(self, stream=None):
         """ terminate the visualization process, return poses [t, q] """

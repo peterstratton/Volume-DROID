@@ -37,10 +37,6 @@ class ConvBKI(torch.nn.Module):
         self.compound = compound
         
         self.voxel_sizes = (self.max_bound.view(-1) - self.min_bound.view(-1)) / self.grid_size.to(self.device)
-
-        print("voxel sizes: " + str(self.voxel_sizes))
-        print("min bound: " + str(self.min_bound))
-        print("max bound: " + str(self.max_bound))
         
         self.pi = torch.acos(torch.zeros(1)).item() * 2
         self.max_dist = max_dist
@@ -141,8 +137,6 @@ class ConvBKI(torch.nn.Module):
         labels      = input_pc[:, 3:]
         
         valid_input_mask = torch.all((input_xyz < max_bound) & (input_xyz >= min_bound), axis=1)
-
-        # print("valid input mask: " + str(valid_input_mask))
         
         valid_xyz = input_xyz[valid_input_mask]
         valid_labels = labels[valid_input_mask]
@@ -178,15 +172,6 @@ class ConvBKI(torch.nn.Module):
             unique_inds, counts = torch.unique(grid_pc.to(torch.long), return_counts=True, dim=0)
             counts = counts.type(torch.long)
             grid_indices = [unique_inds[:, i] for i in range(grid_pc.shape[1])]
-
-            print("grid indicies: " + str(len(grid_indices)))
-            print("update shape: " + str(update.shape))
-            print("counts: " + str(counts.shape))
-            # grid_inds = []
-            # for i in range(4):
-            #     grid_inds.append(grid_indices[i])
-            #     print("grid index: " + str(grid_indices[i].shape))
-            
             update[grid_indices] = update[grid_indices] + counts
         return update
 

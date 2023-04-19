@@ -1,3 +1,6 @@
+"""
+Custom torch.utils.data.Dataset for TartanAir data.
+"""
 import os
 import numpy as np
 import yaml
@@ -16,30 +19,8 @@ tartanair_config = yaml.safe_load(open(config_file, 'r'))
 SPLIT_SEQUENCES = tartanair_config["SPLIT_SEQUENCES"]
 
 class TartanAirDataset(Dataset):
-    """Kitti Dataset for Neural BKI project
-    
-    Access to the processed data, including evaluation labels predictions velodyne poses times
     """
-    """
-    Initialize the TartanAirDataset object with the following parameters:
-
-    grid_params: dictionary containing the following parameters
-        - grid_size: size of the voxel grid
-        - min_bound: minimum XYZ coordinates for the voxel grid
-        - max_bound: maximum XYZ coordinates for the voxel grid
-    directory: path to the directory containing the KITTI dataset
-    device: device on which to perform computations
-    num_frames: number of consecutive frames to use as input
-    voxelize_input: whether to voxelize the input point cloud
-    binary_counts: whether to use binary voxel counts instead of occupancy probabilities
-    random_flips: whether to randomly flip the input data during training
-    use_aug: whether to use data augmentation during training
-    apply_transform: whether to apply a transform matrix to the input point cloud
-    remap: whether to remap the class labels to a new range
-    from_continuous: whether to load predictions from a continuous model
-    to_continuous: whether to convert predictions to a continuous output
-    num_classes: number of classes in the dataset
-    data_split: which split of the dataset to use (train, val, or test)
+    TartanAir Dataset for Neural BKI project
     """
     def __init__(self,
                 directory="/datasets_withaccess/POO2", #change to dataset directory later in DROID-SLAM
@@ -74,6 +55,9 @@ class TartanAirDataset(Dataset):
             # read corresponding segs
             seg_l = np.load(seg_left[t])
             seg_r = np.load(seg_right[t])
+
+            # hack to match TartanAir classes to KITTI classes, classes outside the 
+            # set are set to label 0
             for cl_f, cl_t in zip(classes_from, classes_to):
                 seg_l = np.where(seg_l == cl_f, cl_t, seg_l)
                 seg_r = np.where(seg_r == cl_f, cl_t, seg_r)
